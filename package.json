@@ -1,0 +1,29 @@
+{
+  "name": "szukaj-ksiazek",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Book discovery and recommendation platform for Polish market",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev --workspace=@szukaj-ksiazek/api",
+    "dev:mobile": "npm run dev --workspace=@szukaj-ksiazek/mobile",
+    "build": "npm run build --workspaces --if-present",
+    "build:api": "npm run build --workspace=@szukaj-ksiazek/api",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate --workspace=@szukaj-ksiazek/api",
+    "db:migrate": "npm run db:migrate --workspace=@szukaj-ksiazek/api",
+    "db:seed": "npm run db:seed --workspace=@szukaj-ksiazek/api"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5"
+  }
+}
