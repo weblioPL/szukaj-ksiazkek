@@ -18,8 +18,14 @@ export default () => ({
   },
 
   buybox: {
-    apiUrl: process.env.BUYBOX_API_URL || 'https://api.buybox.pl',
-    apiKey: process.env.BUYBOX_API_KEY,
+    // Base URL for BUYBOX API - endpoint format: {baseUrl}/{widgetId}/buybox.json
+    baseUrl: 'https://buybox.click',
+    // Widget ID from publisher panel - MUST be provided via environment variable
+    widgetId: process.env.BUYBOX_WIDGET_ID,
+    // Request timeout in milliseconds
+    timeout: parseInt(process.env.BUYBOX_TIMEOUT || '5000', 10),
+    // Cache TTL in seconds
+    cacheTtl: parseInt(process.env.BUYBOX_CACHE_TTL || '3600', 10),
   },
 
   cors: {

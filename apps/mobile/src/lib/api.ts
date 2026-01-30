@@ -2,6 +2,64 @@ import { useAuthStore } from '../stores/auth';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
 
+// Type definitions
+export interface Author {
+  id: string;
+  name: string;
+  role?: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  bookCount?: number;
+  children?: Category[];
+}
+
+export interface Book {
+  id: string;
+  isbn?: string;
+  ean?: string;
+  title: string;
+  originalTitle?: string;
+  description?: string;
+  coverUrl?: string;
+  publishedAt?: string;
+  publisher?: string;
+  pageCount?: number;
+  language: string;
+  formats: {
+    paper: boolean;
+    ebook: boolean;
+    audiobook: boolean;
+  };
+  avgRating: number;
+  ratingsCount: number;
+  authors: Author[];
+  categories: Category[];
+}
+
+export interface Offer {
+  id?: string;
+  storeName: string;
+  storeLogoUrl?: string;
+  format: 'paper' | 'ebook' | 'audiobook';
+  price: number;
+  originalPrice?: number;
+  currency: string;
+  url: string;
+  isAvailable: boolean;
+}
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 interface ApiError {
   statusCode: number;
   error: string;
@@ -162,6 +220,7 @@ class ApiClient {
       search?: string;
       category?: string;
       format?: string;
+      sort?: 'relevance' | 'title' | 'rating' | 'newest';
       page?: number;
       limit?: number;
     }) => {
@@ -169,27 +228,52 @@ class ApiClient {
       if (params?.search) searchParams.set('search', params.search);
       if (params?.category) searchParams.set('category', params.category);
       if (params?.format) searchParams.set('format', params.format);
+      if (params?.sort) searchParams.set('sort', params.sort);
       if (params?.page) searchParams.set('page', params.page.toString());
       if (params?.limit) searchParams.set('limit', params.limit.toString());
 
       const queryString = searchParams.toString();
       return this.request<{
-        data: any[];
-        pagination: { page: number; limit: number; total: number; totalPages: number };
+        data: Book[];
+        pagination: Pagination;
       }>(`/books${queryString ? `?${queryString}` : ''}`);
     },
 
-    get: (id: string) => this.request<any>(`/books/${id}`),
+    get: (id: string) => this.request<Book>(`/books/${id}`),
 
-    categories: () => this.request<any[]>('/books/categories'),
+    getByIsbn: (isbn: string) => this.request<Book>(`/books/isbn/${isbn}`),
+
+    categories: () => this.request<{ data: Category[] }>('/books/categories'),
+
+    popular: (limit = 10) =>
+      this.request<{ data: Book[] }>(`/books/popular?limit=${limit}`),
+
+    newest: (limit = 10) =>
+      this.request<{ data: Book[] }>(`/books/newest?limit=${limit}`),
+
+    byCategory: (slug: string, page = 1, limit = 20) =>
+      this.request<{
+        data: Book[];
+        pagination: Pagination;
+      }>(`/books/category/${slug}?page=${page}&limit=${limit}`),
   };
 
   // Offers endpoints
   offers = {
     byBook: (bookId: string, format?: string) => {
       const params = format ? `?format=${format}` : '';
-      return this.request<{ data: any[] }>(`/offers/book/${bookId}${params}`);
+      return this.request<{ data: Offer[]; source: string }>(`/offers/book/${bookId}${params}`);
     },
+
+    byIsbn: (isbn: string, format?: string) => {
+      const params = format ? `?format=${format}` : '';
+      return this.request<{ data: Offer[]; source: string }>(`/offers/isbn/${isbn}${params}`);
+    },
+
+    refresh: (bookId: string) =>
+      this.request<{ data: Offer[]; refreshedAt: string }>(`/offers/book/${bookId}/refresh`, {
+        method: 'POST',
+      }),
   };
 
   // Chat endpoints

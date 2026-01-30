@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,167 +6,216 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  FlatList,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../src/lib/api';
+import { api, Book, Category } from '../../src/lib/api';
+import { BookCard } from '../../src/components/BookCard';
+import { useDebouncedValue } from '../../src/hooks/useDebounce';
+
+type FormatFilter = 'all' | 'paper' | 'ebook' | 'audiobook';
 
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeFormat, setActiveFormat] = useState<FormatFilter>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['books', searchQuery, activeCategory],
-    queryFn: () =>
-      api.books.list({
-        search: searchQuery || undefined,
-        category: activeCategory || undefined,
-        limit: 20,
-      }),
-    enabled: searchQuery.length > 2 || activeCategory !== null,
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+
+  // Fetch categories
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => api.books.categories(),
   });
 
-  const categories = [
-    { slug: 'biznes-i-ekonomia', name: 'Biznes' },
-    { slug: 'rozwoj-osobisty', name: 'Rozwój' },
-    { slug: 'literatura-piekna', name: 'Literatura' },
-    { slug: 'kryminal-i-thriller', name: 'Kryminał' },
-    { slug: 'science-fiction-i-fantasy', name: 'Sci-Fi' },
-  ];
+  // Fetch books
+  const {
+    data: booksData,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['books', debouncedSearch, activeCategory, activeFormat],
+    queryFn: () =>
+      api.books.list({
+        search: debouncedSearch || undefined,
+        category: activeCategory || undefined,
+        format: activeFormat === 'all' ? undefined : activeFormat,
+        limit: 20,
+      }),
+    enabled: debouncedSearch.length >= 2 || activeCategory !== null,
+  });
+
+  const categories = categoriesData?.data || [];
+  const books = booksData?.data || [];
+
+  const renderBook = useCallback(
+    ({ item }: { item: Book }) => <BookCard book={item} variant={viewMode} />,
+    [viewMode],
+  );
 
   return (
     <View className="flex-1 bg-gray-50">
       {/* Search input */}
       <View className="bg-white px-4 py-3 border-b border-gray-200">
-        <TextInput
-          className="bg-gray-100 rounded-lg px-4 py-3 text-base"
-          placeholder="Szukaj książek, autorów..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          returnKeyType="search"
-        />
+        <View className="flex-row items-center">
+          <View className="flex-1 bg-gray-100 rounded-xl px-4 py-3 flex-row items-center">
+            <Text className="text-gray-400 mr-2">🔍</Text>
+            <TextInput
+              className="flex-1 text-base"
+              placeholder="Szukaj ksiazek, autorow..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Text className="text-gray-400 text-lg">✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* View toggle */}
+          <TouchableOpacity
+            className="ml-3 p-2"
+            onPress={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
+          >
+            <Text className="text-xl">{viewMode === 'list' ? '⊞' : '☰'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Category filters */}
-      <View className="bg-white px-4 py-3 border-b border-gray-200">
+      <View className="bg-white px-2 py-3 border-b border-gray-200">
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View className="flex-row gap-2">
-            <TouchableOpacity
-              className={`px-4 py-2 rounded-full ${
-                activeCategory === null
-                  ? 'bg-primary-600'
-                  : 'bg-gray-100'
-              }`}
-              onPress={() => setActiveCategory(null)}
-            >
-              <Text
-                className={
-                  activeCategory === null ? 'text-white' : 'text-gray-700'
-                }
-              >
-                Wszystkie
-              </Text>
-            </TouchableOpacity>
-            {categories.map((category) => (
-              <TouchableOpacity
-                key={category.slug}
-                className={`px-4 py-2 rounded-full ${
-                  activeCategory === category.slug
-                    ? 'bg-primary-600'
-                    : 'bg-gray-100'
-                }`}
-                onPress={() => setActiveCategory(category.slug)}
-              >
-                <Text
-                  className={
-                    activeCategory === category.slug
-                      ? 'text-white'
-                      : 'text-gray-700'
-                  }
-                >
-                  {category.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <FilterChip
+            label="Wszystkie"
+            selected={activeCategory === null}
+            onPress={() => setActiveCategory(null)}
+          />
+          {categories.slice(0, 8).map((category: Category) => (
+            <FilterChip
+              key={category.slug}
+              label={category.name}
+              selected={activeCategory === category.slug}
+              onPress={() => setActiveCategory(category.slug)}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Format filters */}
+      <View className="bg-white px-2 py-2 border-b border-gray-200">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <FilterChip
+            label="Wszystkie formaty"
+            selected={activeFormat === 'all'}
+            onPress={() => setActiveFormat('all')}
+          />
+          <FilterChip
+            label="📚 Papierowe"
+            selected={activeFormat === 'paper'}
+            onPress={() => setActiveFormat('paper')}
+          />
+          <FilterChip
+            label="📱 E-booki"
+            selected={activeFormat === 'ebook'}
+            onPress={() => setActiveFormat('ebook')}
+          />
+          <FilterChip
+            label="🎧 Audiobooki"
+            selected={activeFormat === 'audiobook'}
+            onPress={() => setActiveFormat('audiobook')}
+          />
         </ScrollView>
       </View>
 
       {/* Results */}
-      <ScrollView className="flex-1">
-        {isLoading && (
-          <View className="py-12 items-center">
-            <ActivityIndicator size="large" color="#0ea5e9" />
-            <Text className="text-gray-500 mt-4">Szukam książek...</Text>
-          </View>
-        )}
-
-        {error && (
-          <View className="py-12 items-center px-6">
-            <Text className="text-red-500 text-center">
-              Wystąpił błąd podczas wyszukiwania
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#4F46E5" />
+          <Text className="text-gray-500 mt-4">Szukam ksiazek...</Text>
+        </View>
+      ) : error ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-5xl mb-4">😕</Text>
+          <Text className="text-red-500 text-center">
+            Wystapil blad podczas wyszukiwania
+          </Text>
+          <TouchableOpacity
+            className="mt-4 bg-primary-600 px-6 py-3 rounded-lg"
+            onPress={() => refetch()}
+          >
+            <Text className="text-white font-medium">Sprobuj ponownie</Text>
+          </TouchableOpacity>
+        </View>
+      ) : debouncedSearch.length < 2 && activeCategory === null ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-5xl mb-4">🔍</Text>
+          <Text className="text-gray-900 font-medium text-center text-lg">
+            Szukaj ksiazek
+          </Text>
+          <Text className="text-gray-500 text-center mt-2">
+            Wpisz tytul, autora lub wybierz kategorie
+          </Text>
+        </View>
+      ) : books.length === 0 ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-5xl mb-4">📭</Text>
+          <Text className="text-gray-900 font-medium text-center text-lg">
+            Brak wynikow
+          </Text>
+          <Text className="text-gray-500 text-center mt-2">
+            Sprobuj innych slow kluczowych
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={books}
+          renderItem={renderBook}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{
+            padding: 16,
+            ...(viewMode === 'grid' && { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }),
+          }}
+          numColumns={viewMode === 'grid' ? 2 : 1}
+          key={viewMode} // Force re-render when view mode changes
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text className="text-gray-500 text-sm mb-4">
+              Znaleziono {booksData?.pagination?.total || books.length} ksiazek
             </Text>
-          </View>
-        )}
-
-        {!isLoading && !error && data?.data && data.data.length > 0 && (
-          <View className="p-4">
-            {data.data.map((book: any) => (
-              <TouchableOpacity
-                key={book.id}
-                className="bg-white rounded-xl p-4 mb-3 flex-row shadow-sm"
-              >
-                <View className="w-16 h-24 bg-gray-200 rounded-lg mr-4 items-center justify-center">
-                  <Text className="text-2xl">📖</Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="font-semibold text-gray-900" numberOfLines={2}>
-                    {book.title}
-                  </Text>
-                  <Text className="text-gray-500 text-sm mt-1">
-                    {book.authors?.map((a: any) => a.name).join(', ') || 'Nieznany autor'}
-                  </Text>
-                  {book.avgRating > 0 && (
-                    <View className="flex-row items-center mt-2">
-                      <Text className="text-yellow-500">★</Text>
-                      <Text className="text-gray-600 text-sm ml-1">
-                        {book.avgRating.toFixed(1)} ({book.ratingsCount})
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {!isLoading &&
-          !error &&
-          (searchQuery.length < 3 && activeCategory === null) && (
-            <View className="py-12 items-center px-6">
-              <Text className="text-5xl mb-4">🔍</Text>
-              <Text className="text-gray-900 font-medium text-center">
-                Szukaj książek
-              </Text>
-              <Text className="text-gray-500 text-center mt-2">
-                Wpisz tytuł, autora lub wybierz kategorię
-              </Text>
-            </View>
-          )}
-
-        {!isLoading &&
-          !error &&
-          data?.data?.length === 0 && (
-            <View className="py-12 items-center px-6">
-              <Text className="text-5xl mb-4">📭</Text>
-              <Text className="text-gray-900 font-medium text-center">
-                Brak wyników
-              </Text>
-              <Text className="text-gray-500 text-center mt-2">
-                Spróbuj innych słów kluczowych
-              </Text>
-            </View>
-          )}
-      </ScrollView>
+          }
+        />
+      )}
     </View>
+  );
+}
+
+function FilterChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      className={`px-4 py-2 rounded-full mx-1 ${
+        selected ? 'bg-primary-600' : 'bg-gray-100'
+      }`}
+      onPress={onPress}
+    >
+      <Text
+        className={`text-sm font-medium ${selected ? 'text-white' : 'text-gray-700'}`}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
