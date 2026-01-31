@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { BuyboxModule } from './modules/buybox/buybox.module';
+import { ClaudeModule } from './modules/claude/claude.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { BooksModule } from './modules/books/books.module';
@@ -19,6 +20,7 @@ import configuration from './config/configuration';
     }),
     PrismaModule,
     BuyboxModule,
+    ClaudeModule,
     HealthModule,
     AuthModule,
     UsersModule,
