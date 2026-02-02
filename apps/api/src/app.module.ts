@@ -8,6 +8,7 @@ import { UsersModule } from './modules/users/users.module';
 import { BooksModule } from './modules/books/books.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { OffersModule } from './modules/offers/offers.module';
+import { PurchasesModule } from './modules/purchases/purchases.module';
 import { ImportModule } from './modules/import/import.module';
 import { HealthModule } from './modules/health/health.module';
 import configuration from './config/configuration';
@@ -27,6 +28,7 @@ import configuration from './config/configuration';
     BooksModule,
     ChatModule,
     OffersModule,
+    PurchasesModule,
     ImportModule,
   ],
 })
