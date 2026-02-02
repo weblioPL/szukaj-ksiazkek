@@ -4,16 +4,17 @@ import {
   BuyboxPurchaseHistoryResponse,
   BuyboxPurchaseData,
   PurchaseFormat,
+  BuyboxTransactionStatus,
 } from '../purchases.types';
 
 /**
  * Mock Purchase Provider
  *
- * Simulates BUYBOX purchase history API for development and testing.
+ * Simulates BUYBOX Transactions API for development and testing.
  * This provider generates realistic mock data and can be easily swapped
- * for the real BUYBOX implementation once the API is available.
+ * for the real BUYBOX implementation.
  *
- * TODO: Replace with BuyboxPurchaseProvider when API spec is available
+ * Use by setting: USE_MOCK_PURCHASES="true" in .env
  */
 @Injectable()
 export class MockPurchaseProvider implements IPurchaseProvider {
@@ -21,13 +22,13 @@ export class MockPurchaseProvider implements IPurchaseProvider {
 
   // Mock data for realistic testing
   private readonly mockStores = [
-    { name: 'Empik', logoUrl: 'https://example.com/empik-logo.png' },
-    { name: 'Świat Książki', logoUrl: 'https://example.com/swiat-logo.png' },
-    { name: 'Gandalf', logoUrl: 'https://example.com/gandalf-logo.png' },
-    { name: 'Bonito', logoUrl: 'https://example.com/bonito-logo.png' },
-    { name: 'Matras', logoUrl: 'https://example.com/matras-logo.png' },
-    { name: 'Legimi', logoUrl: 'https://example.com/legimi-logo.png' },
-    { name: 'Audioteka', logoUrl: 'https://example.com/audioteka-logo.png' },
+    { campId: 'empik', name: 'Empik', logoUrl: 'https://example.com/empik-logo.png' },
+    { campId: 'swiat-ksiazki', name: 'Świat Książki', logoUrl: 'https://example.com/swiat-logo.png' },
+    { campId: 'gandalf', name: 'Gandalf', logoUrl: 'https://example.com/gandalf-logo.png' },
+    { campId: 'bonito', name: 'Bonito', logoUrl: 'https://example.com/bonito-logo.png' },
+    { campId: 'matras', name: 'Matras', logoUrl: 'https://example.com/matras-logo.png' },
+    { campId: 'legimi', name: 'Legimi', logoUrl: 'https://example.com/legimi-logo.png' },
+    { campId: 'audioteka', name: 'Audioteka', logoUrl: 'https://example.com/audioteka-logo.png' },
   ];
 
   private readonly mockBooks = [
@@ -42,6 +43,7 @@ export class MockPurchaseProvider implements IPurchaseProvider {
   ];
 
   private readonly formats: PurchaseFormat[] = ['paper', 'ebook', 'audiobook'];
+  private readonly statuses: BuyboxTransactionStatus[] = ['accept', 'accept', 'accept', 'new', 'reject'];
 
   /**
    * Fetch mock purchase history
@@ -49,7 +51,13 @@ export class MockPurchaseProvider implements IPurchaseProvider {
    */
   async fetchPurchaseHistory(
     userId: string,
-    options?: { page?: number; limit?: number; forceRefresh?: boolean },
+    options?: {
+      page?: number;
+      limit?: number;
+      forceRefresh?: boolean;
+      fromDate?: Date;
+      toDate?: Date;
+    },
   ): Promise<BuyboxPurchaseHistoryResponse> {
     this.logger.debug(
       `[MOCK] Fetching purchase history for user ${userId} (page: ${options?.page || 1})`,
@@ -68,19 +76,33 @@ export class MockPurchaseProvider implements IPurchaseProvider {
     // Generate purchases
     const allPurchases = this.generatePurchases(userId, totalPurchases);
 
+    // Filter by date range if provided
+    let filteredPurchases = allPurchases;
+    if (options?.fromDate || options?.toDate) {
+      filteredPurchases = allPurchases.filter((p) => {
+        const purchaseDate = new Date(p.purchasedAt);
+        if (options.fromDate && purchaseDate < options.fromDate) return false;
+        if (options.toDate && purchaseDate > options.toDate) return false;
+        return true;
+      });
+    }
+
     // Paginate
+    const totalFiltered = filteredPurchases.length;
+    const totalPages = Math.ceil(totalFiltered / limit);
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    const paginatedPurchases = allPurchases.slice(startIndex, endIndex);
+    const paginatedPurchases = filteredPurchases.slice(startIndex, endIndex);
 
     return {
       success: true,
       purchases: paginatedPurchases,
       pagination: {
-        total: totalPurchases,
+        total: totalFiltered,
         page,
         limit,
-        hasMore: endIndex < totalPurchases,
+        hasMore: endIndex < totalFiltered,
+        totalPages,
       },
       lastSyncAt: new Date().toISOString(),
     };
@@ -116,6 +138,7 @@ export class MockPurchaseProvider implements IPurchaseProvider {
       const book = this.mockBooks[purchaseSeed % this.mockBooks.length];
       const store = this.mockStores[purchaseSeed % this.mockStores.length];
       const format = this.formats[(purchaseSeed * 3) % this.formats.length];
+      const status = this.statuses[purchaseSeed % this.statuses.length];
 
       // Generate price based on format
       const basePrice = this.generatePrice(format, purchaseSeed);
@@ -123,6 +146,10 @@ export class MockPurchaseProvider implements IPurchaseProvider {
       const originalPrice = hasDiscount
         ? Math.round(basePrice * 1.2 * 100) / 100
         : undefined;
+
+      // Generate commission (5-10% of price)
+      const commissionRate = 0.05 + (purchaseSeed % 6) * 0.01;
+      const commission = Math.round(basePrice * commissionRate * 100) / 100;
 
       // Generate purchase date (within last 2 years)
       const daysAgo = (purchaseSeed * 17) % 730; // Up to 2 years ago
@@ -141,9 +168,13 @@ export class MockPurchaseProvider implements IPurchaseProvider {
         originalPrice,
         purchasedAt: purchaseDate.toISOString(),
         productTitle: book.title,
+        status,
+        commission,
         affiliateData: {
-          campaign: 'mock-campaign',
-          source: 'mock-source',
+          campaign: store.campId,
+          abpar1: book.isbn,
+          abpar2: format,
+          abpar3: '',
         },
       });
     }

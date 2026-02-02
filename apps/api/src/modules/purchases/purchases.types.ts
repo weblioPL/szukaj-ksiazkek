@@ -1,12 +1,13 @@
 /**
  * Purchase Types
  *
- * Data contracts for BUYBOX purchase history integration.
+ * Data contracts for BUYBOX Transactions API integration.
  * These types define the interface between our system and the BUYBOX API.
  *
- * NOTE: The actual BUYBOX purchase-history API specification is pending.
- * These types are designed based on expected data and will be updated
- * once the official API documentation is available.
+ * Official BUYBOX Transactions API:
+ * - Base URL: https://api.buybox.click
+ * - Endpoint: GET /api/v1/spaces/{spaceId}/transactions
+ * - See /docs/BUYBOX_TRANSACTIONS_API.md for full documentation
  */
 
 /**
@@ -15,28 +16,87 @@
 export type PurchaseFormat = 'paper' | 'ebook' | 'audiobook';
 
 /**
- * Raw purchase data from BUYBOX API
- * This represents the expected response structure from BUYBOX
- *
- * TODO: Update this interface when BUYBOX purchase API spec is available
+ * Transaction status from BUYBOX API
+ */
+export type BuyboxTransactionStatus = 'new' | 'accept' | 'reject';
+
+/**
+ * Raw transaction from BUYBOX Transactions API
+ * Matches the actual API response structure
+ */
+export interface BuyboxTransactionRaw {
+  /** Transaction ID */
+  transId: string;
+
+  /** Transaction amount (purchase price) */
+  amount: number;
+
+  /** Transaction date (ISO format or YYYY-MM-DD) */
+  date: string;
+
+  /** Space ID (publisher account) */
+  spaceId: string;
+
+  /** Campaign ID (store/retailer identifier) */
+  campId: string;
+
+  /** Transaction status */
+  status: BuyboxTransactionStatus;
+
+  /** Publisher commission amount */
+  publisherCommissionAmount: number;
+
+  /**
+   * Affiliate tracking parameters
+   * These can contain product identifiers (ISBN, EAN) passed during click
+   * - abpar1: Often used for ISBN/EAN
+   * - abpar2: Often used for product category or format
+   * - abpar3: Additional tracking data
+   */
+  abpar1?: string;
+  abpar2?: string;
+  abpar3?: string;
+}
+
+/**
+ * Raw response from BUYBOX Transactions API
+ */
+export interface BuyboxTransactionsApiResponse {
+  /** Array of transactions */
+  transactions?: BuyboxTransactionRaw[];
+
+  /** Alternative: transactions might be at root level */
+  data?: BuyboxTransactionRaw[];
+
+  /** Total page count for pagination */
+  count?: number;
+
+  /** Error message if request failed */
+  error?: string;
+  message?: string;
+}
+
+/**
+ * Normalized purchase data (internal format)
+ * Converted from BuyboxTransactionRaw
  */
 export interface BuyboxPurchaseData {
-  /** BUYBOX order/transaction ID */
+  /** BUYBOX transaction ID */
   orderId: string;
 
-  /** ISBN or EAN of the purchased book */
+  /** ISBN or EAN of the purchased book (from abpar1 or abpar2) */
   productIdentifier: string;
 
-  /** Type of identifier (isbn, ean, or internal) */
+  /** Type of identifier */
   identifierType: 'isbn' | 'ean' | 'internal';
 
-  /** Store/retailer name */
+  /** Store/retailer name (from campId mapping or raw campId) */
   storeName: string;
 
   /** Store logo URL */
   storeLogoUrl?: string;
 
-  /** Book format purchased */
+  /** Book format purchased (inferred from abpar2 or default) */
   format: PurchaseFormat;
 
   /** Purchase price */
@@ -54,17 +114,23 @@ export interface BuyboxPurchaseData {
   /** Product title (as recorded by BUYBOX) */
   productTitle?: string;
 
+  /** Transaction status from BUYBOX */
+  status: BuyboxTransactionStatus;
+
+  /** Publisher commission */
+  commission?: number;
+
   /** Affiliate tracking info */
   affiliateData?: {
     campaign?: string;
-    source?: string;
+    abpar1?: string;
+    abpar2?: string;
+    abpar3?: string;
   };
 }
 
 /**
- * Response from BUYBOX purchase history endpoint
- *
- * TODO: Update structure when BUYBOX API spec is available
+ * Response from purchase history fetch
  */
 export interface BuyboxPurchaseHistoryResponse {
   /** Whether the request was successful */
@@ -79,6 +145,7 @@ export interface BuyboxPurchaseHistoryResponse {
     page: number;
     limit: number;
     hasMore: boolean;
+    totalPages: number;
   };
 
   /** Last sync timestamp */
@@ -95,7 +162,7 @@ export interface NormalizedPurchase {
   buyboxOrderId: string;
   bookIsbn?: string;
   bookEan?: string;
-  bookId?: string; // Resolved from our catalog
+  bookId?: string;
   storeName: string;
   storeLogoUrl?: string;
   format: PurchaseFormat;
@@ -104,6 +171,8 @@ export interface NormalizedPurchase {
   originalPrice?: number;
   purchasedAt: Date;
   productTitle?: string;
+  status?: BuyboxTransactionStatus;
+  commission?: number;
   matchedBook?: {
     id: string;
     title: string;
@@ -150,6 +219,8 @@ export interface PurchaseWithBook {
   currency: string;
   purchasedAt?: Date;
   syncedAt: Date;
+  status?: BuyboxTransactionStatus;
+  commission?: number;
   book?: {
     id: string;
     title: string;
@@ -159,20 +230,55 @@ export interface PurchaseWithBook {
 }
 
 /**
- * Provider configuration
+ * Provider configuration for BUYBOX Transactions API
  */
-export interface PurchaseProviderConfig {
-  /** BUYBOX widget ID */
-  widgetId: string;
+export interface BuyboxTransactionsConfig {
+  /** BUYBOX API token */
+  apiToken: string;
 
-  /** API timeout in ms */
+  /** BUYBOX Space ID (publisher account) */
+  spaceId: string;
+
+  /** API base URL */
+  baseUrl: string;
+
+  /** Request timeout in ms */
   timeout: number;
+
+  /** Items per page (default 50) */
+  perPage: number;
+
+  /** Lookback days for initial sync (default 90) */
+  lookbackDays: number;
+
+  /** Maximum pages to fetch (safety limit) */
+  maxPages: number;
+
+  /** Maximum retries on failure */
+  maxRetries: number;
 
   /** Cache TTL in seconds */
   cacheTtl: number;
+}
 
-  /** Base URL for BUYBOX API */
+/**
+ * Legacy provider configuration (for backward compatibility)
+ */
+export interface PurchaseProviderConfig {
+  widgetId: string;
+  timeout: number;
+  cacheTtl: number;
   baseUrl: string;
+}
+
+/**
+ * Campaign ID to store name mapping
+ * Used to display friendly store names
+ */
+export interface CampaignMapping {
+  campId: string;
+  storeName: string;
+  storeLogoUrl?: string;
 }
 
 /**
@@ -187,7 +293,13 @@ export interface IPurchaseProvider {
    */
   fetchPurchaseHistory(
     userId: string,
-    options?: { page?: number; limit?: number; forceRefresh?: boolean },
+    options?: {
+      page?: number;
+      limit?: number;
+      forceRefresh?: boolean;
+      fromDate?: Date;
+      toDate?: Date;
+    },
   ): Promise<BuyboxPurchaseHistoryResponse>;
 
   /**
