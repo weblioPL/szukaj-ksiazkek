@@ -6,6 +6,7 @@ import { ClaudeModule } from './modules/claude/claude.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { BooksModule } from './modules/books/books.module';
+import { BookshelfModule } from './modules/bookshelf/bookshelf.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
@@ -26,6 +27,7 @@ import configuration from './config/configuration';
     AuthModule,
     UsersModule,
     BooksModule,
+    BookshelfModule,
     ChatModule,
     OffersModule,
     PurchasesModule,
