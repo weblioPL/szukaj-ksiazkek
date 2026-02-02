@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { BooksModule } from './modules/books/books.module';
 import { BookshelfModule } from './modules/bookshelf/bookshelf.module';
+import { PreferencesModule } from './modules/preferences/preferences.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
@@ -28,6 +29,7 @@ import configuration from './config/configuration';
     UsersModule,
     BooksModule,
     BookshelfModule,
+    PreferencesModule,
     ChatModule,
     OffersModule,
     PurchasesModule,
