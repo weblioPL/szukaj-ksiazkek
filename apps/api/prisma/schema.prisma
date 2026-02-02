@@ -180,16 +180,18 @@ enum ReadingStatus {
 }
 
 model UserBook {
-  id         String        @id @default(uuid())
-  userId     String        @map("user_id")
-  bookId     String        @map("book_id")
-  status     ReadingStatus
-  rating     Int?
-  review     String?
-  startedAt  DateTime?     @map("started_at")
-  finishedAt DateTime?     @map("finished_at")
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
+  id              String        @id @default(uuid())
+  userId          String        @map("user_id")
+  bookId          String        @map("book_id")
+  status          ReadingStatus
+  rating          Int?          // 1-5, only allowed when status = READ (enforced in service)
+  review          String?
+  startedAt       DateTime?     @map("started_at")
+  finishedAt      DateTime?     @map("finished_at")
+  statusChangedAt DateTime?     @map("status_changed_at") // When status last changed
+  ratedAt         DateTime?     @map("rated_at")          // When rating was set/changed
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
@@ -198,6 +200,7 @@ model UserBook {
   @@index([userId])
   @@index([bookId])
   @@index([status])
+  @@index([ratedAt])
   @@map("user_books")
 }
 
