@@ -7,6 +7,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     search: '🔍',
     chat: '💬',
     bookshelf: '📚',
+    purchases: '🧾',
     profile: '👤',
   };
 
@@ -72,6 +73,14 @@ export default function TabsLayout() {
           title: 'Półka',
           headerTitle: 'Moja półka',
           tabBarIcon: ({ focused }) => <TabIcon name="bookshelf" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="purchases"
+        options={{
+          title: 'Zakupy',
+          headerShown: false,
+          tabBarIcon: ({ focused }) => <TabIcon name="purchases" focused={focused} />,
         }}
       />
       <Tabs.Screen
