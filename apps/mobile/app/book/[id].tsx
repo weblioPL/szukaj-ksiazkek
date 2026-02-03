@@ -1,105 +1,175 @@
-import { useState, useEffect } from 'react';
+/**
+ * Book Detail Screen
+ *
+ * Main conversion point: displays book info, offers, bookshelf actions.
+ * Uses React Query for data fetching with optimistic updates.
+ */
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
   Image,
   ScrollView,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
-import { api, Book, Offer } from '../../src/lib/api';
+import { ReadingStatus } from '../../src/lib/api';
+import {
+  useBook,
+  useOffers,
+  useBookshelfItem,
+  useUpdateBookshelfStatus,
+  useUpdateBookshelfRating,
+  useRecommendations,
+  useExplainRecommendation,
+} from '../../src/hooks/useApi';
 import { OfferCard } from '../../src/components/OfferCard';
+import { BookCardCompact, SectionHeader } from '../../src/components/BookListComponents';
 
 type FormatFilter = 'all' | 'paper' | 'ebook' | 'audiobook';
 
 export default function BookDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [book, setBook] = useState<Book | null>(null);
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [offersLoading, setOffersLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState<FormatFilter>('all');
+  const [showExplanation, setShowExplanation] = useState(false);
 
-  const loadBook = async () => {
-    try {
-      setError(null);
-      const data = await api.books.get(id!);
-      setBook(data);
-    } catch (err: any) {
-      setError(err.message || 'Nie udalo sie zaladowac ksiazki');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Data fetching with React Query
+  const {
+    data: book,
+    isLoading: bookLoading,
+    isError: bookError,
+    refetch: refetchBook,
+  } = useBook(id!, { enabled: !!id });
 
-  const loadOffers = async (format?: string) => {
+  const {
+    data: offersData,
+    isLoading: offersLoading,
+    refetch: refetchOffers,
+  } = useOffers(id!, selectedFormat === 'all' ? undefined : selectedFormat);
+
+  const {
+    data: bookshelfItem,
+    isLoading: bookshelfLoading,
+  } = useBookshelfItem(id!);
+
+  const {
+    data: recommendationsData,
+  } = useRecommendations({ limit: 5 });
+
+  // Mutations
+  const updateStatus = useUpdateBookshelfStatus();
+  const updateRating = useUpdateBookshelfRating();
+  const explainMutation = useExplainRecommendation();
+
+  // Pull-to-refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchBook(), refetchOffers()]);
+    setRefreshing(false);
+  }, [refetchBook, refetchOffers]);
+
+  // Handle status change
+  const handleStatusChange = (status: ReadingStatus) => {
     if (!id) return;
 
-    try {
-      setOffersLoading(true);
-      const response = await api.offers.byBook(
-        id,
-        format === 'all' ? undefined : format,
+    updateStatus.mutate(
+      { bookId: id, status },
+      {
+        onError: (error) => {
+          Alert.alert('Błąd', 'Nie udało się zaktualizować statusu');
+        },
+      }
+    );
+  };
+
+  // Handle rating change
+  const handleRatingChange = (rating: number) => {
+    if (!id) return;
+
+    // Check if book is READ
+    if (bookshelfItem?.status !== 'READ') {
+      Alert.alert(
+        'Najpierw przeczytaj',
+        'Możesz ocenić książkę dopiero po oznaczeniu jej jako przeczytanej.',
       );
-      setOffers(response.data);
-    } catch (err: any) {
-      console.error('Failed to load offers:', err);
-    } finally {
-      setOffersLoading(false);
+      return;
     }
+
+    updateRating.mutate(
+      { bookId: id, rating },
+      {
+        onError: () => {
+          Alert.alert('Błąd', 'Nie udało się zapisać oceny');
+        },
+      }
+    );
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([loadBook(), loadOffers(selectedFormat)]);
-    setRefreshing(false);
+  // Handle explanation toggle
+  const handleExplainToggle = () => {
+    if (!showExplanation && !explainMutation.data && id) {
+      explainMutation.mutate({ bookId: id });
+    }
+    setShowExplanation(!showExplanation);
   };
 
-  useEffect(() => {
-    if (id) {
-      loadBook();
-      loadOffers();
-    }
-  }, [id]);
-
-  useEffect(() => {
-    loadOffers(selectedFormat);
-  }, [selectedFormat]);
-
-  if (loading) {
+  // Loading state
+  if (bookLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50">
-        <ActivityIndicator size="large" color="#4F46E5" />
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Ładowanie...' }} />
+        <ScrollView className="flex-1 bg-gray-50">
+          <BookDetailSkeleton />
+        </ScrollView>
+      </>
     );
   }
 
-  if (error || !book) {
+  // Error state
+  if (bookError || !book) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-50 px-6">
-        <Text className="text-red-500 text-center">{error || 'Nie znaleziono ksiazki'}</Text>
-        <TouchableOpacity
-          className="mt-4 bg-primary-600 px-6 py-3 rounded-lg"
-          onPress={() => router.back()}
-        >
-          <Text className="text-white font-medium">Wróc</Text>
-        </TouchableOpacity>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Błąd' }} />
+        <View className="flex-1 items-center justify-center bg-gray-50 px-6">
+          <Text className="text-4xl mb-4">😕</Text>
+          <Text className="text-red-500 text-center text-lg">
+            Nie udało się załadować książki
+          </Text>
+          <TouchableOpacity
+            className="mt-4 bg-primary-600 px-6 py-3 rounded-lg"
+            onPress={() => refetchBook()}
+          >
+            <Text className="text-white font-medium">Spróbuj ponownie</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            className="mt-2 px-6 py-3"
+            onPress={() => router.back()}
+          >
+            <Text className="text-primary-600 font-medium">Wróć</Text>
+          </TouchableOpacity>
+        </View>
+      </>
     );
   }
 
+  const offers = offersData?.data || [];
   const authorsText = book.authors.map((a) => a.name).join(', ');
-  const categoriesText = book.categories.map((c) => c.name).join(', ');
+  const currentStatus = bookshelfItem?.status;
+  const currentRating = bookshelfItem?.rating;
+
+  // Similar books (excluding current book)
+  const similarBooks = recommendationsData?.items
+    .filter((r) => r.book.id !== id)
+    .slice(0, 4) || [];
 
   return (
     <>
       <Stack.Screen
         options={{
-          title: book.title,
+          title: book.title.length > 30 ? book.title.substring(0, 30) + '...' : book.title,
           headerTitleStyle: { fontSize: 16 },
         }}
       />
@@ -107,7 +177,11 @@ export default function BookDetailScreen() {
       <ScrollView
         className="flex-1 bg-gray-50"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#0ea5e9"
+          />
         }
       >
         {/* Hero section with cover */}
@@ -142,6 +216,15 @@ export default function BookDetailScreen() {
               {authorsText}
             </Text>
 
+            {/* Categories as pills */}
+            <View className="flex-row flex-wrap justify-center mt-3">
+              {book.categories.slice(0, 3).map((cat) => (
+                <View key={cat.id} className="bg-gray-100 px-3 py-1 rounded-full mr-2 mb-2">
+                  <Text className="text-xs text-gray-600">{cat.name}</Text>
+                </View>
+              ))}
+            </View>
+
             {/* Rating */}
             <View className="flex-row items-center justify-center mt-3">
               <Text className="text-yellow-500 text-xl">★</Text>
@@ -174,16 +257,33 @@ export default function BookDetailScreen() {
           </View>
         </View>
 
-        {/* Quick actions */}
-        <View className="flex-row px-6 py-4 bg-white mt-2">
-          <TouchableOpacity className="flex-1 bg-primary-600 py-3 rounded-xl mr-2">
-            <Text className="text-white text-center font-semibold">
-              Chce przeczytac
+        {/* Bookshelf Status Control */}
+        <View className="bg-white mt-2 px-6 py-4">
+          <Text className="text-lg font-semibold text-gray-900 mb-3">Moja półka</Text>
+          <StatusSelector
+            currentStatus={currentStatus}
+            onStatusChange={handleStatusChange}
+            isLoading={updateStatus.isPending || bookshelfLoading}
+          />
+
+          {/* Rating (only if READ) */}
+          {currentStatus === 'READ' && (
+            <View className="mt-4">
+              <Text className="text-sm text-gray-600 mb-2">Twoja ocena</Text>
+              <RatingStars
+                rating={currentRating || 0}
+                onRatingChange={handleRatingChange}
+                disabled={updateRating.isPending}
+              />
+            </View>
+          )}
+
+          {/* Helper text if not READ */}
+          {currentStatus && currentStatus !== 'READ' && (
+            <Text className="text-xs text-gray-400 mt-3">
+              Oznacz jako przeczytaną, aby dodać ocenę
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity className="flex-1 bg-gray-100 py-3 rounded-xl ml-2">
-            <Text className="text-gray-700 text-center font-medium">Ocen</Text>
-          </TouchableOpacity>
+          )}
         </View>
 
         {/* Description */}
@@ -194,32 +294,73 @@ export default function BookDetailScreen() {
           </View>
         )}
 
-        {/* Details */}
+        {/* Recommendation Explanation (collapsible) */}
         <View className="bg-white mt-2 px-6 py-4">
-          <Text className="text-lg font-semibold text-gray-900 mb-3">Szczegoly</Text>
-          <View className="flex-row flex-wrap">
-            {book.isbn && (
-              <DetailItem label="ISBN" value={book.isbn} />
-            )}
-            {book.publisher && (
-              <DetailItem label="Wydawnictwo" value={book.publisher} />
-            )}
-            {book.pageCount && (
-              <DetailItem label="Liczba stron" value={book.pageCount.toString()} />
-            )}
-            {categoriesText && (
-              <DetailItem label="Kategorie" value={categoriesText} />
-            )}
-          </View>
+          <TouchableOpacity
+            onPress={handleExplainToggle}
+            className="flex-row items-center justify-between"
+          >
+            <Text className="text-lg font-semibold text-gray-900">
+              Dlaczego polecamy tę książkę?
+            </Text>
+            <Text className="text-primary-600 text-xl">
+              {showExplanation ? '▲' : '▼'}
+            </Text>
+          </TouchableOpacity>
+
+          {showExplanation && (
+            <View className="mt-3">
+              {explainMutation.isPending ? (
+                <View className="py-4 items-center">
+                  <Text className="text-gray-500">Analizuję...</Text>
+                </View>
+              ) : explainMutation.isError ? (
+                <View className="py-2">
+                  <Text className="text-red-500">
+                    Nie udało się załadować wyjaśnienia
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => explainMutation.mutate({ bookId: id! })}
+                    className="mt-2"
+                  >
+                    <Text className="text-primary-600">Spróbuj ponownie</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : explainMutation.data ? (
+                <View>
+                  <Text className="text-gray-700 leading-6">
+                    {explainMutation.data.explanation}
+                  </Text>
+                  {explainMutation.data.alternatives && explainMutation.data.alternatives.length > 0 && (
+                    <View className="mt-3 pt-3 border-t border-gray-100">
+                      <Text className="text-sm text-gray-500 mb-2">Sprawdź też:</Text>
+                      {explainMutation.data.alternatives.map((alt) => (
+                        <TouchableOpacity
+                          key={alt.id}
+                          onPress={() => router.push(`/book/${alt.id}`)}
+                          className="py-1"
+                        >
+                          <Text className="text-primary-600">• {alt.title}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ) : (
+                <Text className="text-gray-500">
+                  Brak dostępnego wyjaśnienia
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Offers section */}
         <View className="bg-white mt-2 px-6 py-4">
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-lg font-semibold text-gray-900">
-              Oferty ({offers.length})
+              Gdzie kupić {offers.length > 0 && `(${offers.length})`}
             </Text>
-            {offersLoading && <ActivityIndicator size="small" color="#4F46E5" />}
           </View>
 
           {/* Format filter */}
@@ -257,9 +398,19 @@ export default function BookDetailScreen() {
           </ScrollView>
 
           {/* Offers list */}
-          {offers.length === 0 ? (
+          {offersLoading ? (
             <View className="py-8 items-center">
-              <Text className="text-gray-500">Brak ofert dla wybranego formatu</Text>
+              <Text className="text-gray-500">Ładowanie ofert...</Text>
+            </View>
+          ) : offers.length === 0 ? (
+            <View className="py-8 items-center bg-gray-50 rounded-xl">
+              <Text className="text-3xl mb-2">🛒</Text>
+              <Text className="text-gray-500 text-center">
+                Brak ofert dla wybranego formatu
+              </Text>
+              <Text className="text-xs text-gray-400 mt-1">
+                Spróbuj wybrać inny format lub sprawdź później
+              </Text>
             </View>
           ) : (
             offers.map((offer, index) => (
@@ -268,10 +419,126 @@ export default function BookDetailScreen() {
           )}
         </View>
 
+        {/* Details */}
+        <View className="bg-white mt-2 px-6 py-4">
+          <Text className="text-lg font-semibold text-gray-900 mb-3">Szczegóły</Text>
+          <View className="flex-row flex-wrap">
+            {book.isbn && <DetailItem label="ISBN" value={book.isbn} />}
+            {book.publisher && <DetailItem label="Wydawnictwo" value={book.publisher} />}
+            {book.pageCount && <DetailItem label="Liczba stron" value={book.pageCount.toString()} />}
+            {book.language && <DetailItem label="Język" value={book.language} />}
+          </View>
+        </View>
+
+        {/* Similar Books */}
+        {similarBooks.length > 0 && (
+          <View className="mt-2 py-4">
+            <SectionHeader title="Podobne książki" />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 16 }}
+            >
+              {similarBooks.map((rec) => (
+                <BookCardCompact
+                  key={rec.book.id}
+                  book={rec.book}
+                  score={rec.score}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Bottom padding */}
         <View className="h-8" />
       </ScrollView>
     </>
+  );
+}
+
+// ============================================
+// Sub-components
+// ============================================
+
+function StatusSelector({
+  currentStatus,
+  onStatusChange,
+  isLoading,
+}: {
+  currentStatus?: ReadingStatus;
+  onStatusChange: (status: ReadingStatus) => void;
+  isLoading: boolean;
+}) {
+  const statuses: { value: ReadingStatus; label: string; emoji: string }[] = [
+    { value: 'WANT_TO_READ', label: 'Chcę przeczytać', emoji: '📚' },
+    { value: 'READING', label: 'Czytam', emoji: '📖' },
+    { value: 'READ', label: 'Przeczytana', emoji: '✅' },
+  ];
+
+  return (
+    <View className="flex-row">
+      {statuses.map((status, index) => {
+        const isSelected = currentStatus === status.value;
+        const isFirst = index === 0;
+        const isLast = index === statuses.length - 1;
+
+        return (
+          <TouchableOpacity
+            key={status.value}
+            onPress={() => onStatusChange(status.value)}
+            disabled={isLoading}
+            className={`flex-1 py-3 items-center border ${
+              isSelected
+                ? 'bg-primary-600 border-primary-600'
+                : 'bg-white border-gray-200'
+            } ${isFirst ? 'rounded-l-xl' : ''} ${isLast ? 'rounded-r-xl' : ''} ${
+              !isFirst ? '-ml-px' : ''
+            }`}
+          >
+            <Text className={`text-lg ${isLoading ? 'opacity-50' : ''}`}>
+              {status.emoji}
+            </Text>
+            <Text
+              className={`text-xs mt-1 ${
+                isSelected ? 'text-white font-medium' : 'text-gray-600'
+              } ${isLoading ? 'opacity-50' : ''}`}
+            >
+              {status.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function RatingStars({
+  rating,
+  onRatingChange,
+  disabled,
+}: {
+  rating: number;
+  onRatingChange: (rating: number) => void;
+  disabled: boolean;
+}) {
+  return (
+    <View className="flex-row">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <TouchableOpacity
+          key={star}
+          onPress={() => onRatingChange(star)}
+          disabled={disabled}
+          className="mr-2"
+        >
+          <Text
+            className={`text-3xl ${disabled ? 'opacity-50' : ''}`}
+          >
+            {star <= rating ? '★' : '☆'}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 }
 
@@ -308,5 +575,48 @@ function FormatFilterButton({
         {label}
       </Text>
     </TouchableOpacity>
+  );
+}
+
+function BookDetailSkeleton() {
+  return (
+    <View className="bg-white">
+      {/* Cover skeleton */}
+      <View className="items-center pt-6 pb-6">
+        <View className="w-40 h-60 bg-gray-200 rounded-xl" />
+      </View>
+
+      {/* Title and author skeleton */}
+      <View className="px-6">
+        <View className="h-8 bg-gray-200 rounded w-3/4 mx-auto" />
+        <View className="h-5 bg-gray-200 rounded w-1/2 mx-auto mt-3" />
+        <View className="h-4 bg-gray-200 rounded w-1/3 mx-auto mt-3" />
+      </View>
+
+      {/* Status selector skeleton */}
+      <View className="px-6 py-4 mt-4">
+        <View className="h-5 bg-gray-200 rounded w-24 mb-3" />
+        <View className="flex-row">
+          <View className="flex-1 h-16 bg-gray-200 rounded-l-xl" />
+          <View className="flex-1 h-16 bg-gray-200 -ml-px" />
+          <View className="flex-1 h-16 bg-gray-200 rounded-r-xl -ml-px" />
+        </View>
+      </View>
+
+      {/* Description skeleton */}
+      <View className="px-6 py-4 mt-2">
+        <View className="h-5 bg-gray-200 rounded w-16 mb-3" />
+        <View className="h-4 bg-gray-200 rounded w-full mb-2" />
+        <View className="h-4 bg-gray-200 rounded w-full mb-2" />
+        <View className="h-4 bg-gray-200 rounded w-3/4" />
+      </View>
+
+      {/* Offers skeleton */}
+      <View className="px-6 py-4 mt-2">
+        <View className="h-5 bg-gray-200 rounded w-32 mb-4" />
+        <View className="h-20 bg-gray-200 rounded-xl mb-3" />
+        <View className="h-20 bg-gray-200 rounded-xl" />
+      </View>
+    </View>
   );
 }
