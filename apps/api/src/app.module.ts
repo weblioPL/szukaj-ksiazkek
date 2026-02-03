@@ -11,6 +11,7 @@ import { PreferencesModule } from './modules/preferences/preferences.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { OffersModule } from './modules/offers/offers.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
+import { RecommendationsModule } from './modules/recommendations/recommendations.module';
 import { ImportModule } from './modules/import/import.module';
 import { HealthModule } from './modules/health/health.module';
 import configuration from './config/configuration';
@@ -33,6 +34,7 @@ import configuration from './config/configuration';
     ChatModule,
     OffersModule,
     PurchasesModule,
+    RecommendationsModule,
     ImportModule,
   ],
 })
