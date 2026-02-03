@@ -198,6 +198,45 @@ export interface PurchaseStats {
   currency: string;
 }
 
+// Chat types
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  bookIds?: string[];
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  title?: string;
+  lastMessage?: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  userId: string;
+  title?: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationsResponse {
+  data: Conversation[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
 interface ApiError {
   statusCode: number;
   error: string;
@@ -417,21 +456,18 @@ class ApiClient {
   // Chat endpoints
   chat = {
     list: (page = 1, limit = 20) =>
-      this.request<{
-        data: any[];
-        pagination: { page: number; limit: number; total: number; totalPages: number };
-      }>(`/conversations?page=${page}&limit=${limit}`),
+      this.request<ConversationsResponse>(`/conversations?page=${page}&limit=${limit}`),
 
-    get: (id: string) => this.request<any>(`/conversations/${id}`),
+    get: (id: string) => this.request<ConversationDetail>(`/conversations/${id}`),
 
     create: (message: string) =>
-      this.request<{ conversationId: string; message: any }>('/conversations', {
+      this.request<{ conversationId: string; message: ChatMessage }>('/conversations', {
         method: 'POST',
         body: JSON.stringify({ message }),
       }),
 
     sendMessage: (conversationId: string, content: string) =>
-      this.request<any>(`/conversations/${conversationId}/messages`, {
+      this.request<ChatMessage>(`/conversations/${conversationId}/messages`, {
         method: 'POST',
         body: JSON.stringify({ content }),
       }),
@@ -441,9 +477,18 @@ class ApiClient {
         method: 'DELETE',
       }),
 
-    // Streaming message endpoint - returns EventSource URL
+    // Streaming message endpoint - returns base URL for SSE
     getStreamUrl: (conversationId: string) =>
       `${this.baseUrl}/conversations/${conversationId}/messages/stream`,
+
+    // Get auth token for SSE requests
+    getAuthToken: () => {
+      const { getAccessToken } = useAuthStore.getState();
+      return getAccessToken();
+    },
+
+    // Get base URL for SSE
+    getBaseUrl: () => this.baseUrl,
   };
 
   // Bookshelf endpoints

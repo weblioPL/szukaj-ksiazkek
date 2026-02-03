@@ -18,6 +18,9 @@ import {
   CompareResponse,
   PurchasesResponse,
   PurchaseStats,
+  Conversation,
+  ConversationDetail,
+  ChatMessage,
 } from '@lib/api';
 
 // ============================================
