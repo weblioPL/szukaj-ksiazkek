@@ -1,26 +1,48 @@
+# ===========================================
+# Szukaj Książek - Docker Compose
+# ===========================================
+# Local development and production-ready setup
+#
+# Usage:
+#   Development:  docker-compose up -d
+#   Production:   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Prerequisites:
+#   1. Copy ../.env.example to ../.env and fill in values
+#   2. Or set environment variables directly
+
 version: '3.8'
 
 services:
+  # ===========================================
+  # PostgreSQL Database
+  # ===========================================
   postgres:
     image: postgres:15-alpine
     container_name: szukaj-ksiazek-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: szukaj_ksiazek
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-szukaj_ksiazek}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-szukaj_ksiazek}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
+  # ===========================================
+  # Redis (for caching and sessions)
+  # ===========================================
   redis:
     image: redis:7-alpine
     container_name: szukaj-ksiazek-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -31,28 +53,71 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===========================================
+  # API Server (NestJS)
+  # ===========================================
   api:
     build:
       context: ../apps/api
       dockerfile: Dockerfile
     container_name: szukaj-ksiazek-api
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/szukaj_ksiazek?schema=public
-      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret}
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-szukaj_ksiazek}?schema=public
+
+      # Authentication
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-15m}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+
+      # AI Integration
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      BUYBOX_API_KEY: ${BUYBOX_API_KEY}
-      NODE_ENV: development
+
+      # BUYBOX Integration
+      BUYBOX_WIDGET_ID: ${BUYBOX_WIDGET_ID:-}
+      BUYBOX_API_TOKEN: ${BUYBOX_API_TOKEN:-}
+      BUYBOX_SPACE_ID: ${BUYBOX_SPACE_ID:-}
+      BUYBOX_API_BASE_URL: ${BUYBOX_API_BASE_URL:-https://api.buybox.click}
+      BUYBOX_TIMEOUT: ${BUYBOX_TIMEOUT:-10000}
+      BUYBOX_CACHE_TTL: ${BUYBOX_CACHE_TTL:-3600}
+      USE_MOCK_PURCHASES: ${USE_MOCK_PURCHASES:-true}
+
+      # Application
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://localhost:19006,http://localhost:3000}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      LOG_JSON: ${LOG_JSON:-false}
     ports:
       - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ../apps/api:/app
-      - /app/node_modules
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
+# ===========================================
+# Volumes
+# ===========================================
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
+
+# ===========================================
+# Networks (optional, for multi-service setups)
+# ===========================================
+networks:
+  default:
+    name: szukaj-ksiazek-network
