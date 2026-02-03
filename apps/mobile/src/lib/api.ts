@@ -60,6 +60,144 @@ export interface Pagination {
   totalPages: number;
 }
 
+// Bookshelf types
+export type ReadingStatus = 'WANT_TO_READ' | 'READING' | 'READ';
+
+export interface BookshelfItem {
+  id: string;
+  bookId: string;
+  status: ReadingStatus;
+  rating?: number;
+  review?: string;
+  addedAt: string;
+  statusChangedAt?: string;
+  ratedAt?: string;
+  book: Book;
+}
+
+export interface BookshelfStats {
+  total: number;
+  byStatus: {
+    wantToRead: number;
+    reading: number;
+    read: number;
+  };
+  ratings: {
+    count: number;
+    average: number;
+    distribution: Record<number, number>;
+  };
+}
+
+// Recommendation types
+export interface RecommendedBook {
+  id: string;
+  isbn?: string;
+  title: string;
+  coverUrl?: string;
+  description?: string;
+  authors: string[];
+  categories: string[];
+  formats: {
+    paper: boolean;
+    ebook: boolean;
+    audiobook: boolean;
+  };
+  avgRating: number;
+  ratingsCount: number;
+  hasOffers: boolean;
+}
+
+export interface RecommendationDebug {
+  categoryScore: number;
+  authorScore: number;
+  formatScore: number;
+  popularityScore: number;
+  matchedCategories: string[];
+  matchedAuthors: string[];
+  matchedFormat?: string;
+}
+
+export interface Recommendation {
+  book: RecommendedBook;
+  score: number;
+  reasons: string[];
+  debug?: RecommendationDebug;
+}
+
+export interface RecommendationResponse {
+  items: Recommendation[];
+  meta: {
+    confidence: number;
+    fallbackUsed: boolean;
+    candidatesConsidered: number;
+    excluded: number;
+    algorithmVersion: string;
+  };
+}
+
+export interface ExplainResponse {
+  bookId: string;
+  explanation: string;
+  reasons: string[];
+  confidence: number;
+  alternatives?: Array<{
+    id: string;
+    title: string;
+    authors: string[];
+    reason: string;
+  }>;
+}
+
+export interface CompareResponse {
+  books: Array<{
+    id: string;
+    title: string;
+    authors: string[];
+    score: number;
+    matchedCategories: string[];
+    matchedAuthors: string[];
+  }>;
+  comparison: string;
+  bestFitId?: string;
+  bestFitReason?: string;
+}
+
+// Purchase types
+export interface Purchase {
+  id: string;
+  bookId?: string;
+  externalId: string;
+  title: string;
+  authors: string[];
+  format: 'PAPER' | 'EBOOK' | 'AUDIOBOOK';
+  price: number;
+  currency: string;
+  purchasedAt: string;
+  storeName: string;
+  book?: Book;
+}
+
+export interface PurchasesResponse {
+  items: Purchase[];
+  pagination: {
+    cursor?: string;
+    hasMore: boolean;
+    total: number;
+  };
+}
+
+export interface PurchaseStats {
+  total: number;
+  byFormat: {
+    paper: number;
+    ebook: number;
+    audiobook: number;
+  };
+  totalSpent: number;
+  currency: string;
+}
+
 interface ApiError {
   statusCode: number;
   error: string;
@@ -302,6 +440,105 @@ class ApiClient {
       this.request<void>(`/conversations/${id}`, {
         method: 'DELETE',
       }),
+
+    // Streaming message endpoint - returns EventSource URL
+    getStreamUrl: (conversationId: string) =>
+      `${this.baseUrl}/conversations/${conversationId}/messages/stream`,
+  };
+
+  // Bookshelf endpoints
+  bookshelf = {
+    list: (params?: { status?: ReadingStatus; limit?: number; cursor?: string }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.status) searchParams.set('status', params.status);
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
+      if (params?.cursor) searchParams.set('cursor', params.cursor);
+      const queryString = searchParams.toString();
+      return this.request<{
+        items: BookshelfItem[];
+        cursor?: string;
+        hasMore: boolean;
+      }>(`/bookshelf${queryString ? `?${queryString}` : ''}`);
+    },
+
+    getItem: (bookId: string) =>
+      this.request<BookshelfItem>(`/bookshelf/${bookId}`),
+
+    updateStatus: (bookId: string, status: ReadingStatus) =>
+      this.request<BookshelfItem>(`/bookshelf/${bookId}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      }),
+
+    updateRating: (bookId: string, rating: number) =>
+      this.request<BookshelfItem>(`/bookshelf/${bookId}/rating`, {
+        method: 'POST',
+        body: JSON.stringify({ rating }),
+      }),
+
+    remove: (bookId: string) =>
+      this.request<void>(`/bookshelf/${bookId}`, {
+        method: 'DELETE',
+      }),
+
+    stats: () => this.request<BookshelfStats>('/bookshelf/stats'),
+  };
+
+  // Recommendations endpoints
+  recommendations = {
+    get: (params?: {
+      limit?: number;
+      debug?: boolean;
+      format?: 'paper' | 'ebook' | 'audiobook';
+      categoryId?: string;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
+      if (params?.debug) searchParams.set('debug', 'true');
+      if (params?.format) searchParams.set('format', params.format);
+      if (params?.categoryId) searchParams.set('categoryId', params.categoryId);
+      const queryString = searchParams.toString();
+      return this.request<RecommendationResponse>(
+        `/recommendations${queryString ? `?${queryString}` : ''}`,
+      );
+    },
+
+    explain: (bookId: string, context?: string) =>
+      this.request<ExplainResponse>('/recommendations/explain', {
+        method: 'POST',
+        body: JSON.stringify({ bookId, context }),
+      }),
+
+    compare: (bookIds: string[], question?: string) =>
+      this.request<CompareResponse>('/recommendations/compare', {
+        method: 'POST',
+        body: JSON.stringify({ bookIds, question }),
+      }),
+  };
+
+  // Purchases endpoints
+  purchases = {
+    list: (params?: { limit?: number; cursor?: string; format?: string }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
+      if (params?.cursor) searchParams.set('cursor', params.cursor);
+      if (params?.format) searchParams.set('format', params.format);
+      const queryString = searchParams.toString();
+      return this.request<PurchasesResponse>(`/purchases${queryString ? `?${queryString}` : ''}`);
+    },
+
+    refresh: () =>
+      this.request<{ syncedCount: number; lastSyncAt: string }>('/purchases/refresh', {
+        method: 'POST',
+      }),
+
+    stats: () => this.request<PurchaseStats>('/purchases/stats'),
+  };
+
+  // Health check (no auth required)
+  health = {
+    check: () =>
+      this.request<{ status: string; timestamp: string }>('/health'),
   };
 }
 
