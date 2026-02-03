@@ -8,6 +8,10 @@ import {
   IsBoolean,
   IsEnum,
   IsString,
+  IsUUID,
+  IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
 } from 'class-validator';
 
 /**
@@ -207,4 +211,158 @@ export class RecommendationResponseDto {
     type: RecommendationMetaDto,
   })
   meta: RecommendationMetaDto;
+}
+
+// ============================================
+// AI Explanation DTOs
+// ============================================
+
+/**
+ * Request body for POST /recommendations/explain
+ */
+export class ExplainRequestDto {
+  @ApiProperty({
+    description: 'Book ID to explain',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsUUID()
+  bookId: string;
+
+  @ApiPropertyOptional({
+    description: 'Optional user question for context (e.g., "Why is this recommended?")',
+    example: 'Dlaczego ta książka jest dla mnie polecana?',
+  })
+  @IsOptional()
+  @IsString()
+  context?: string;
+}
+
+/**
+ * Alternative book suggestion
+ */
+export class AlternativeBookDto {
+  @ApiProperty({ description: 'Book ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Book title' })
+  title: string;
+
+  @ApiProperty({ description: 'Author names', type: [String] })
+  authors: string[];
+
+  @ApiProperty({ description: 'Why this is suggested as alternative' })
+  reason: string;
+}
+
+/**
+ * Response for POST /recommendations/explain
+ */
+export class ExplainResponseDto {
+  @ApiProperty({ description: 'Book ID that was explained' })
+  bookId: string;
+
+  @ApiProperty({
+    description: 'AI-generated explanation in Polish',
+    example: 'Polecamy tę książkę, ponieważ:\n• Lubisz książki fantasy\n• Czytałeś już książki tego autora',
+  })
+  explanation: string;
+
+  @ApiProperty({
+    description: 'Algorithmic reasons from deterministic engine',
+    type: [String],
+  })
+  reasons: string[];
+
+  @ApiProperty({
+    description: 'Confidence score from user preference data (0-1)',
+    minimum: 0,
+    maximum: 1,
+  })
+  confidence: number;
+
+  @ApiPropertyOptional({
+    description: 'Alternative books to try (from catalog only)',
+    type: [AlternativeBookDto],
+  })
+  alternatives?: AlternativeBookDto[];
+}
+
+/**
+ * Request body for POST /recommendations/compare
+ */
+export class CompareRequestDto {
+  @ApiProperty({
+    description: 'Book IDs to compare (2-5 books)',
+    example: ['uuid1', 'uuid2', 'uuid3'],
+    minItems: 2,
+    maxItems: 5,
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(5)
+  @IsUUID('4', { each: true })
+  bookIds: string[];
+
+  @ApiPropertyOptional({
+    description: 'User question about the comparison',
+    example: 'Która z tych książek lepiej do mnie pasuje i dlaczego?',
+  })
+  @IsOptional()
+  @IsString()
+  question?: string;
+}
+
+/**
+ * Compared book info
+ */
+export class ComparedBookDto {
+  @ApiProperty({ description: 'Book ID' })
+  id: string;
+
+  @ApiProperty({ description: 'Book title' })
+  title: string;
+
+  @ApiProperty({ description: 'Author names', type: [String] })
+  authors: string[];
+
+  @ApiProperty({
+    description: 'Recommendation score (0-1)',
+    minimum: 0,
+    maximum: 1,
+  })
+  score: number;
+
+  @ApiProperty({ description: 'Matched category names', type: [String] })
+  matchedCategories: string[];
+
+  @ApiProperty({ description: 'Matched author names', type: [String] })
+  matchedAuthors: string[];
+}
+
+/**
+ * Response for POST /recommendations/compare
+ */
+export class CompareResponseDto {
+  @ApiProperty({
+    description: 'Books being compared with their scores',
+    type: [ComparedBookDto],
+  })
+  books: ComparedBookDto[];
+
+  @ApiProperty({
+    description: 'AI-generated comparison in Polish',
+    example: 'Porównanie książek:\n\n"Książka A" - ma wyższe dopasowanie kategorii...',
+  })
+  comparison: string;
+
+  @ApiPropertyOptional({
+    description: 'ID of the best fitting book based on preferences',
+  })
+  bestFitId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Why the best fit was chosen',
+    example: 'Najwyższy wynik dopasowania: 85%',
+  })
+  bestFitReason?: string;
 }
